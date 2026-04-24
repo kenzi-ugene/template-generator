@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Letter Template Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; max-width: 1000px; }
+        h1 { margin-bottom: 8px; }
+        p { color: #444; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        label { display: flex; flex-direction: column; font-size: 14px; gap: 6px; }
+        input, textarea { padding: 8px; font-size: 14px; }
+        textarea { min-height: 70px; resize: vertical; }
+        .actions { margin-top: 16px; display: flex; gap: 10px; }
+        button { padding: 10px 16px; cursor: pointer; }
+        #status { margin-top: 16px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Letter Template Generator</h1>
+    <p>Only predefined placeholders are editable. Layout stays locked to the DOCX master template.</p>
+    <form id="letter-form">
+        <div class="grid" id="fields"></div>
+        <div class="actions">
+            <button type="submit">Generate Letter</button>
+        </div>
+    </form>
+    <div id="status"></div>
+
+    <script>
+        const form = document.getElementById("letter-form");
+        const fieldsContainer = document.getElementById("fields");
+        const statusBox = document.getElementById("status");
+
+        function getInputType(field) {
+            const lowered = `${field.key} ${field.label}`.toLowerCase();
+            if (lowered.includes("date") && lowered.includes("time")) {
+                return "datetime-local";
+            }
+            if (lowered.includes("date") || lowered.includes("today")) {
+                return "date";
+            }
+            return "text";
+        }
+
+        async function setupForm() {
+            const [schemaRes, defaultsRes] = await Promise.all([
+                fetch("/api/schema"),
+                fetch("/api/defaults")
+            ]);
+
+            const schema = await schemaRes.json();
+            const defaults = await defaultsRes.json();
+
+            for (const field of schema.editableFields) {
+                const wrapper = document.createElement("label");
+                wrapper.textContent = field.label;
+
+                const isLong = field.maxLength > 150;
+                const input = document.createElement(isLong ? "textarea" : "input");
+                if (!isLong) {
+                    input.type = getInputType(field);
+                }
+                input.name = field.key;
+                input.maxLength = field.maxLength;
+                input.required = field.required;
+                input.value = defaults[field.key] || "";
+                input.placeholder = field.key;
+                wrapper.appendChild(input);
+                fieldsContainer.appendChild(wrapper);
+            }
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            statusBox.textContent = "Generating...";
+
+            const formData = new FormData(form);
+            const payload = Object.fromEntries(formData.entries());
+
+            const response = await fetch("/api/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                statusBox.textContent = `Failed: ${data.message}\n${(data.errors || [data.error]).join("\n")}`;
+                return;
+            }
+
+            const pdfLine = data.files.pdf
+                ? `PDF: <a href="${data.files.pdf}" target="_blank">${data.files.pdf}</a>`
+                : "PDF: skipped (LibreOffice not found)";
+            const warningLine = data.warning ? `\nWarning: ${data.warning}` : "";
+            statusBox.innerHTML = `Generated successfully.\nDOCX: <a href="${data.files.docx}" target="_blank">${data.files.docx}</a>\n${pdfLine}${warningLine}`;
+        });
+
+        setupForm().catch((error) => {
+            statusBox.textContent = `Setup failed: ${error.message}`;
+        });
+    </script>
+</body>
+</html>

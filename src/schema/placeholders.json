@@ -1,0 +1,118 @@
+{
+    "templateVersion": "1.0.0",
+    "lockedTemplatePath": "templates/letter-master.docx",
+    "editableFields": [
+        {
+            "key": "reference_no",
+            "label": "Reference Number",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "letter_date",
+            "label": "Letter Date",
+            "required": true,
+            "maxLength": 40
+        },
+        {
+            "key": "recipient_name",
+            "label": "Recipient Name",
+            "required": true,
+            "maxLength": 160
+        },
+        {
+            "key": "clinic_name",
+            "label": "Clinic Name",
+            "required": true,
+            "maxLength": 160
+        },
+        {
+            "key": "clinic_address",
+            "label": "Clinic Address",
+            "required": true,
+            "maxLength": 300
+        },
+        {
+            "key": "candidate_name",
+            "label": "Candidate Name",
+            "required": true,
+            "maxLength": 160
+        },
+        {
+            "key": "candidate_nric",
+            "label": "Candidate NRIC",
+            "required": true,
+            "maxLength": 40
+        },
+        {
+            "key": "job_designation",
+            "label": "Job Designation",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "staff_category",
+            "label": "Staff Category",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "nature_of_work",
+            "label": "Nature of Work",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "limit_of_coverage",
+            "label": "Limit of Coverage",
+            "required": true,
+            "maxLength": 60
+        },
+        {
+            "key": "validity_start",
+            "label": "Validity Start",
+            "required": true,
+            "maxLength": 60
+        },
+        {
+            "key": "validity_end",
+            "label": "Validity End",
+            "required": true,
+            "maxLength": 60
+        },
+        {
+            "key": "validity_weeks",
+            "label": "Validity Weeks",
+            "required": true,
+            "maxLength": 20
+        },
+        {
+            "key": "contact_emails",
+            "label": "Contact Emails",
+            "required": true,
+            "maxLength": 300
+        },
+        {
+            "key": "invoice_email",
+            "label": "Invoice Email",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "signatory_name",
+            "label": "Signatory Name",
+            "required": true,
+            "maxLength": 120
+        },
+        {
+            "key": "generated_at",
+            "label": "Generated Timestamp",
+            "required": true,
+            "maxLength": 80
+        }
+    ],
+    "lockedRules": {
+        "allowUnknownFields": false,
+        "maxNewLinesPerField": 6
+    }
+}
