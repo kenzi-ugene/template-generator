@@ -6,6 +6,7 @@ const ImageModule = require("docxtemplater-image-module-free");
 const dayjs = require("dayjs");
 const schema = require("../schema/placeholders.json");
 const EMPTY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lM9rWQAAAABJRU5ErkJggg==";
+const GENERATED_PAYLOAD_PATH = "template-generator/payload.json";
 
 function templateAbsolutePath() {
     return path.resolve(process.cwd(), schema.lockedTemplatePath);
@@ -124,6 +125,19 @@ function signatureImageModule() {
     });
 }
 
+function forceAttachmentOnNewPage(xmlText) {
+    if (!xmlText || !xmlText.includes("ATTACHMENT")) {
+        return xmlText;
+    }
+    if (xmlText.includes('<w:br w:type="page"/><w:t>ATTACHMENT')) {
+        return xmlText;
+    }
+    return xmlText.replace(
+        /<w:t[^>]*>ATTACHMENT<\/w:t>/,
+        '<w:br w:type="page"/><w:t>ATTACHMENT</w:t>'
+    );
+}
+
 function mergeTemplate(data) {
     const absolutePath = assertTemplateExists();
     const zip = new PizZip(fs.readFileSync(absolutePath, "binary"));
@@ -137,6 +151,9 @@ function mergeTemplate(data) {
         for (const field of fields) {
             xmlText = xmlText.split(field.marker).join(getPlaceholderTag(field));
         }
+        if (fileName === "word/document.xml") {
+            xmlText = forceAttachmentOnNewPage(xmlText);
+        }
         zip.file(fileName, xmlText);
     }
 
@@ -147,15 +164,49 @@ function mergeTemplate(data) {
     });
 
     doc.render(data);
-    return doc.getZip().generate({
+    const renderedBuffer = doc.getZip().generate({
         type: "nodebuffer",
         compression: "DEFLATE"
     });
+    return attachGeneratedPayload(renderedBuffer, data);
+}
+
+function attachGeneratedPayload(docxBuffer, payload) {
+    const zip = new PizZip(docxBuffer);
+    zip.file(
+        GENERATED_PAYLOAD_PATH,
+        JSON.stringify(
+            {
+                generatedAt: dayjs().toISOString(),
+                payload
+            },
+            null,
+            2
+        )
+    );
+    return zip.generate({
+        type: "nodebuffer",
+        compression: "DEFLATE"
+    });
+}
+
+function extractGeneratedPayload(docxBuffer) {
+    const zip = new PizZip(docxBuffer);
+    const payloadFile = zip.file(GENERATED_PAYLOAD_PATH);
+    if (!payloadFile) {
+        return null;
+    }
+    const parsed = JSON.parse(payloadFile.asText());
+    if (!parsed || typeof parsed !== "object") {
+        return null;
+    }
+    return parsed.payload && typeof parsed.payload === "object" ? parsed.payload : null;
 }
 
 module.exports = {
     mergeTemplate,
     assertTemplateExists,
     getTemplateFields,
-    getDefaultValuesForFields
+    getDefaultValuesForFields,
+    extractGeneratedPayload
 };

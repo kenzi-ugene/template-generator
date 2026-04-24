@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import {
-    Alert,
     Autocomplete,
     Box,
     Button,
+    CircularProgress,
     Container,
     Dialog,
     DialogActions,
@@ -25,6 +25,7 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SettingsIcon from "@mui/icons-material/Settings";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import SignatureCanvas from "react-signature-canvas";
 
@@ -166,10 +167,14 @@ function loadClinicOptions() {
 export default function App() {
     const [fields, setFields] = useState([]);
     const [values, setValues] = useState({});
-    const [status, setStatus] = useState({ type: "info", message: "" });
-    const [files, setFiles] = useState(null);
-    const [warning, setWarning] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [exportTarget, setExportTarget] = useState("word");
+    const [isGeneratingModalOpen, setIsGeneratingModalOpen] = useState(false);
+    const [notificationModal, setNotificationModal] = useState({
+        open: false,
+        title: "",
+        message: ""
+    });
     const [companyOptions, setCompanyOptions] = useState(loadCompanyOptions);
     const [staffCategoryOptions, setStaffCategoryOptions] = useState(
         () => loadSimpleOptions(STAFF_CATEGORY_OPTIONS_STORAGE_KEY, DEFAULT_STAFF_CATEGORY_OPTIONS)
@@ -187,6 +192,7 @@ export default function App() {
     const [isClinicModalOpen, setIsClinicModalOpen] = useState(false);
     const [newClinic, setNewClinic] = useState({ name: "", address: "", telephone: "" });
     const signatureRefs = useRef({});
+    const importInputRef = useRef(null);
 
     useEffect(() => {
         localStorage.setItem(COMPANY_OPTIONS_STORAGE_KEY, JSON.stringify(companyOptions));
@@ -396,7 +402,11 @@ export default function App() {
         }
 
         bootstrap().catch((error) => {
-            setStatus({ type: "error", message: `Setup failed: ${error.message}` });
+            setNotificationModal({
+                open: true,
+                title: "Setup Failed",
+                message: error.message
+            });
         });
     }, []);
 
@@ -407,14 +417,24 @@ export default function App() {
         }));
     }, [fields]);
 
+    function downloadFile(url) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.setAttribute("download", "");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     async function handleSubmit(event) {
         event.preventDefault();
         setIsSubmitting(true);
-        setFiles(null);
-        setWarning("");
-        setStatus({ type: "info", message: "Generating..." });
+        setIsGeneratingModalOpen(true);
+        let timeoutId = null;
 
         try {
+            const controller = new AbortController();
+            timeoutId = setTimeout(() => controller.abort(), 20000);
             const payload = {};
             for (const field of fields) {
                 payload[field.key] = formatForSubmit(field, values[field.key]);
@@ -423,20 +443,82 @@ export default function App() {
             const response = await fetch("/api/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: controller.signal
             });
             const data = await response.json();
             if (!response.ok) {
                 throw new Error(data.error || data.message || "Generation failed");
             }
 
-            setFiles(data.files);
-            setWarning(data.warning || "");
-            setStatus({ type: "success", message: data.message || "Generated successfully." });
+            if (exportTarget === "pdf") {
+                if (data.files?.pdf) {
+                    downloadFile(data.files.pdf);
+                } else {
+                    setNotificationModal({
+                        open: true,
+                        title: "PDF Export Unavailable",
+                        message: data.warning || "PDF export is unavailable because LibreOffice is not installed."
+                    });
+                }
+            } else if (data.files?.docx) {
+                downloadFile(data.files.docx);
+            }
         } catch (error) {
-            setStatus({ type: "error", message: `Failed: ${error.message}` });
+            const message = error.name === "AbortError"
+                ? "Generation timed out after 20 seconds. Please try again."
+                : error.message;
+            setNotificationModal({
+                open: true,
+                title: "Export Failed",
+                message
+            });
         } finally {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+            setIsGeneratingModalOpen(false);
             setIsSubmitting(false);
+        }
+    }
+
+    async function handleImportTemplate(event) {
+        const selectedFile = event.target.files?.[0];
+        if (!selectedFile) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        setIsGeneratingModalOpen(true);
+
+        try {
+            const response = await fetch("/api/generate/import", {
+                method: "POST",
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || data.message || "Import failed");
+            }
+
+            setValues((prev) => ({ ...prev, ...(data.values || {}) }));
+            setNotificationModal({
+                open: true,
+                title: "Import Successful",
+                message: data.message || "Template imported successfully."
+            });
+        } catch (error) {
+            setNotificationModal({
+                open: true,
+                title: "Import Failed",
+                message: error.message
+            });
+        } finally {
+            setIsGeneratingModalOpen(false);
+            if (importInputRef.current) {
+                importInputRef.current.value = "";
+            }
         }
     }
 
@@ -447,8 +529,43 @@ export default function App() {
                 <Typography color="text.secondary">
                     Editable fields are derived from `//` markers in the locked master template.
                 </Typography>
+                <Stack direction="row" spacing={1}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<UploadFileIcon />}
+                        onClick={() => importInputRef.current?.click()}
+                    >
+                        Import File
+                    </Button>
+                    <Button
+                        variant="contained"
+                        type="submit"
+                        form="letter-form"
+                        disabled={isSubmitting}
+                        onClick={() => setExportTarget("word")}
+                    >
+                        {isSubmitting ? "Exporting..." : "EXPORT TO WORD"}
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="error"
+                        type="submit"
+                        form="letter-form"
+                        disabled={isSubmitting}
+                        onClick={() => setExportTarget("pdf")}
+                    >
+                        {isSubmitting ? "Exporting..." : "EXPORT TO PDF"}
+                    </Button>
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        style={{ display: "none" }}
+                        onChange={handleImportTemplate}
+                    />
+                </Stack>
 
-                <Box component="form" onSubmit={handleSubmit}>
+                <Box id="letter-form" component="form" onSubmit={handleSubmit}>
                     <Stack spacing={2}>
                         {groupedFields.map((field) => {
                             const value = values[field.key] || "";
@@ -722,24 +839,33 @@ export default function App() {
                             );
                         })}
 
-                        <Button variant="contained" type="submit" disabled={isSubmitting}>
-                            {isSubmitting ? "Generating..." : "Generate Letter"}
-                        </Button>
                     </Stack>
                 </Box>
-
-                {status.message && <Alert severity={status.type}>{status.message}</Alert>}
-                {files?.docx && (
-                    <Alert severity="info">
-                        DOCX: <Link href={files.docx} target="_blank" rel="noreferrer">{files.docx}</Link>
-                        <br />
-                        PDF: {files.pdf
-                            ? <Link href={files.pdf} target="_blank" rel="noreferrer">{files.pdf}</Link>
-                            : "skipped (LibreOffice not found)"}
-                    </Alert>
-                )}
-                {warning && <Alert severity="warning">{warning}</Alert>}
             </Stack>
+
+            <Dialog open={isGeneratingModalOpen} maxWidth="xs" fullWidth>
+                <DialogContent>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <CircularProgress size={24} />
+                        <Typography>Generating document...</Typography>
+                    </Stack>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={notificationModal.open}
+                onClose={() => setNotificationModal((prev) => ({ ...prev, open: false }))}
+                fullWidth
+                maxWidth="sm"
+            >
+                <DialogTitle>{notificationModal.title}</DialogTitle>
+                <DialogContent>
+                    <Typography>{notificationModal.message}</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setNotificationModal((prev) => ({ ...prev, open: false }))}>OK</Button>
+                </DialogActions>
+            </Dialog>
 
             <Dialog open={isCompanyModalOpen} onClose={() => setIsCompanyModalOpen(false)} fullWidth maxWidth="sm">
                 <DialogTitle>Manage Company Options</DialogTitle>
