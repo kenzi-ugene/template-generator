@@ -525,10 +525,7 @@ export default function App() {
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>
             <Stack spacing={2}>
-                <Typography variant="h4">Letter Template Generator</Typography>
-                <Typography color="text.secondary">
-                    Editable fields are derived from `//` markers in the locked master template.
-                </Typography>
+                {/* <Typography variant="h4">Letter Template Generator</Typography> */}
                 <Stack direction="row" spacing={1}>
                     <Button
                         variant="outlined"
